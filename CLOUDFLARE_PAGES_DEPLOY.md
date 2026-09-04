@@ -1,164 +1,66 @@
 # Intelligent Send · Cloudflare Pages Deployment Guide
 
 ## Overview
-Deploy the frontend to Cloudflare Pages while keeping the FastAPI backend external. The frontend will call your existing backend API.
+Deploy the static HTML frontend to Cloudflare Pages. The FastAPI backend runs separately (on Render, Fly.io, Railway, or your own VPS).
 
-## Prerequisites
-- Cloudflare account
-- Git repository (already at https://github.com/julenosinger/intelligentt-send)
-- Backend FastAPI running (on Render, Fly.io, Railway, or VPS)
+## Configuration
 
-## Step 1: Configure API URL
+The HTML uses `window.API_BASE` set via:
+1. URL query param: `?api=https://your-backend.com`
+2. `localStorage.getItem('API_BASE')`
+3. Default: `http://127.0.0.1:8000`
 
-The HTML frontend is configured to use an environment variable for the API base URL.
+**No Vite, no import.meta.env, no build step.**
 
-### Option A: Set via Cloudflare Pages Dashboard
+## Step 1: Prepare the Frontend
+
+The `index.html` is a static file:
+- No framework required
+- No build step
+- Calls `${API_BASE}/v1/*` endpoints
+
+## Step 2: Deploy to Cloudflare Pages
+
+### Via Dashboard
 1. Go to Cloudflare Pages > Your Project > Settings > Variables
-2. Add variable:
-   - **Name**: `VITE_API_BASE_URL`
-   - **Value**: `https://your-backend-url.com` (e.g., `https://intelligent-send-backend.onrender.com`)
-3. Save and trigger a new deploy
+2. Add variable: `API_BASE` = `https://your-backend-url.com`
+3. Framework preset: **None**
+4. Build command: **empty**
+5. Output directory: **/** (root)
+6. Upload `index.html`
 
-### Option B: Set via Wrangler (CLI)
+### Via Wrangler CLI
 ```bash
-npx pages wrangler secret set VITE_API_BASE_URL
-# Then set value: https://your-backend-url.com
-```
-
-### Default (local development)
-If no env var is set, the fallback is `http://127.0.0.1:8000` (for local testing).
-
-## Step 2: Prepare the Frontend
-
-The HTML file `intelligent-send (1).html` is already configured:
-
-- **API_BASE_URL**: Read from `import.meta.env.VITE_API_BASE_URL` or falls back to `http://127.0.0.1:8000`
-- **fetch() calls**: All API calls use `${window.API_BASE_URL}/v1/*`
-- **Fallback to mock data**: If the API request fails, the app uses local mock data
-
-### Files modified for Cloudflare Pages:
-1. `<script>` block added at top of `<body>` to configure `API_BASE_URL`
-2. `connectWallet()` now fetches real balances from API
-3. `setMax()` now fetches balance from API
-4. `runAnalysis()` now fetches risk analysis from API with mock fallback
-5. `setMax()` updated to use API instead of hardcoded BALANCES
-
-## Step 3: Deploy to Cloudflare Pages
-
-### Option 1: Via GitHub Integration
-1. Go to [Cloudflare Pages](https://dash.cloudflare.com/pages)
-2. Click "Import Project" > "GitHub"
-3. Select repository: `julenosinger/intelligentt-send`
-4. Framework preset: **Vite** (or "Other" if not detected)
-5. Build command: `echo "skip"` (we'll use a different approach)
-6. Root directory: `/` (root of repo)
-7. Add the `VITE_API_BASE_URL` variable in Settings > Variables
-8. Click "Deploy"
-
-### Option 2: Via Wrangler CLI
-```bash
-# Install Cloudflare CLI
-npm install -g wrangler
-
-# Login
-wrangler login
-
-# Create a new Pages project
-wrangler pages project create intelligent-send
-
-# Deploy from dist (we'll use a minimal config)
-# The HTML file is at the root, so it will be served directly
-
-# Or deploy via git
-echo "VITE_API_BASE_URL=https://your-backend-url.com" > user-variables.txt
 wrangler pages deploy --project-name intelligent-send
 ```
 
-### Build Configuration
-Since this is a static HTML file (not a Vite/React app), we need to configure Pages to serve it correctly.
+## Step 3: Backend
+Your FastAPI backend must be accessible and support CORS from your Cloudflare Pages URL.
 
-**cloudflare-pages.json** (create this file in repo root):
-```json
-{
-  "automatic_builds": true,
-  "base_url": "/",
-  "framework": "static"
-}
-```
+Update `ALLOWED_ORIGINS` in `apps/api/main.py` to include your Pages URL.
 
-Or alternatively, add to `package.json`:
-```json
-{
-  "scripts": {
-    "deploy": "wrangler pages deploy"
-  }
-}
-```
+## Step 4: Verify
+- Page loads correctly
+- Connect Wallet fetches balances from backend
+- AI Analysis calls `/v1/ai/analyze`
+- Transaction prepare calls `/v1/tx/prepare`
 
-## Step 4: Verify Deployment
+## Important Notes
+- The HTML does NOT use `import.meta.env` or Vite
+- No `package.json` needed for hosting
+- Static file served directly by Cloudflare Pages
 
-After deploy, visit your Cloudflare Pages URL (e.g., `intelligent-send.xyz.pages.dev`):
-
-### Test Points:
-1. **Page loads** - UI appears correctly
-2. **Wallet Connect** - Fetches balances from your backend API
-3. **Gas Estimate** - Calls `GET /v1/gas/estimate`
-4. **AI Analysis** - Calls `POST /v1/ai/analyze` shows risk score with CSS classes (.ai-msg.ok/.warn/.err)
-5. **Address Validation** - `POST /v1/address/validate` resolves ENS
-6. **History** - `GET /v1/history` shows transactions
-
-### Troubleshooting:
-- **API returns 404/500**: Check that `VITE_API_BASE_URL` is set correctly and your backend is running
-- **CORS errors**: Your backend should have `Access-Control-Allow-Origin: *` or the specific origin
-- **Fallback to mock data**: If API is down, the app shows local mock data (this is expected behavior)
-- **Console errors**: Check Cloudflare Pages > Logs for details
-
-## Step 5: Backend Considerations
-
-Your FastAPI backend should remain accessible from the internet. Recommended options:
-
-### Render.com (Free tier)
-- `https://intelligent-send-backend.onrender.com`
-- Auto-sleeps after inactivity (wake up with a ping)
-
-### Fly.io
-- `https://intelligent-send-fly.app`
-- Always-on option available
-
-### Railway
-- `https://intelligent-send.up.railway.app`
-
-### Your own VPS
-- Any public IP with the FastAPI running
-
-### Health Check (optional but recommended)
-Add a cron job or UptimeRobot to ping your backend every few minutes to prevent auto-sleep:
-
-```
-https://your-backend-url.com/health (you can add a simple /health endpoint)
-```
-
-Or use a free service like UptimeRobot (free tier monitors every 5 minutes).
-
-## Rollback
-If something goes wrong:
-1. Go to Cloudflare Pages > Deployments
-2. Click "Rollback" to previous deployment
-3. Or change `VITE_API_BASE_URL` variable to point to the previous backend URL
-
-## Directory Structure (relevant files)
+## Directory Structure
 ```
 / (root)
-  intelligent-send (1).html   ← frontend (deployed to Cloudflare Pages)
-  apps/api/main.py            ← FastAPI backend (external)
-  contracts/genlayer/         ← GenLayer Intelligent Contracts (Python)
-  packages/chains/            ← Chain adapters
-  packages/db/                ← Database models
+  index.html               ← frontend (deployed to Cloudflare Pages)
+  apps/api/main.py         ← FastAPI backend (external)
+  contracts/genlayer/      ← GenLayer Intelligent Contracts
+  packages/chains/         ← Chain adapters
+  packages/db/             ← Database models
+  tests/                   ← pytest tests
+  scripts/                 ← Utility scripts
   .gitignore
-  README.md
-  package.json                ← optional, for wrangler
+  .env.example
+  requirements.txt
 ```
-
-## License
-This project is for educational and trading purposes. 
-See the [GenLayer documentation](https://docs.genlayer.com/) for more information.

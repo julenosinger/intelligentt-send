@@ -1,0 +1,18 @@
+{
+  "risk_analyzer": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "network": "studio",
+    "chain_id": 61999,
+    "deployed_at": null,
+    "tx_hash": null,
+    "note": "Deploy using scripts/deploy_genlayer.py"
+  },
+  "smart_transfer": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "network": "studio",
+    "chain_id": 61999,
+    "deployed_at": null,
+    "tx_hash": null,
+    "note": "Deploy using scripts/deploy_genlayer.py"
+  }
+}
