@@ -528,6 +528,14 @@ textarea{resize:none;font-size:13px;font-family:var(--mono);line-height:1.5}
 <div class="toast" id="toast"></div>
 
 <script>
+/* ── Config API ── */
+if (import.meta.env) {
+  window.API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+} else {
+  // Fallback for local testing - can be set as global variable
+  window.API_BASE_URL = window.API_BASE_URL || 'http://127.0.0.1:8000';
+}
+
 /* ── theme ── */
 let isDark = true;
 function toggleTheme(){
@@ -545,22 +553,40 @@ function switchTab(name){
 
 /* ── wallet ── */
 const MOCK_ADDR = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
-const BALANCES = { USDC: '1,240.50', EURC: '320.00', ARC: '58.72' };
+
 let walletConnected = false;
+
+async function fetchWalletBalances(address, chainId) {
+  try {
+    const response = await fetch(`${window.API_BASE_URL}/v1/wallet/${address}/balances?chainId=${chainId}`);
+    if (response.ok) {
+      const data = await response.json();
+      return data.balances;
+    }
+  } catch (e) {
+    console.warn('Could not fetch balances', e);
+  }
+  // Fallback to mock balances
+  return { USDC: '1,240.50', EURC: '320.00', ARC: '58.72' };
+}
 
 function connectWallet(){
   // simulate wallet connect
   document.getElementById('connect-btn').textContent = 'Connecting…';
-  setTimeout(() => {
+  setTimeout(async () => {
     walletConnected = true;
     document.getElementById('connect-btn').style.display = 'none';
     const wi = document.getElementById('wallet-info');
     wi.classList.add('show');
     const addr = MOCK_ADDR;
     document.getElementById('wallet-addr-display').textContent = addr.slice(0,8)+'…'+addr.slice(-6);
-    const bals = document.getElementById('wallet-bals');
-    bals.innerHTML = Object.entries(BALANCES).map(([t,b]) =>
+    
+    // Fetch real balances from backend
+    const chainId = 5042002; // Arc Testnet default
+    const bals = await fetchWalletBalances(addr, chainId);
+    document.getElementById('wallet-bals').innerHTML = Object.entries(bals).map(([t,b]) =>
       `<span class="bal-chip">${b} ${t}</span>`).join('');
+    
     renderHistory();
     toast('Wallet connected ✓');
   }, 900);
@@ -575,9 +601,18 @@ function disconnectWallet(){
 }
 
 function setMax(inputId, tokenId){
+  // Fetch balance from API instead of using mock
   const tok = tokenId ? document.getElementById(tokenId)?.textContent : 'USDC';
-  const bal = parseFloat((BALANCES[tok] || '0').replace(',',''));
-  document.getElementById(inputId).value = (bal - 0.01).toFixed(2);
+  fetch(`${window.API_BASE_URL}/v1/wallet/${MOCK_ADDR}/balances?chainId=5042002`)
+    .then(r => r.json())
+    .then(data => {
+      const bal = parseFloat(data.balances[tok] || '0');
+      document.getElementById(inputId).value = (bal - 0.01).toFixed(2);
+    })
+    .catch(() => {
+      // Fallback
+      document.getElementById(inputId).value = '0.00';
+    });
 }
 
 /* ── address validation + ENS ── */
@@ -720,29 +755,57 @@ function runAnalysis(){
   const chks  = document.getElementById('ai-checks');
   const bar   = document.getElementById('risk-bar');
   const scan  = document.getElementById('ai-scan-bar');
+  const ttl   = document.getElementById('ai-time');
   box.classList.add('show');
   wrap.style.display = 'none';
   chks.style.display = 'none';
   msg.className = 'ai-msg spin';
   msg.innerHTML = '<div class="spinner"></div> Querying GenLayer oracle…';
-  document.getElementById('ai-time').textContent = '';
+  ttl.textContent = '';
   scan.style.animation = 'none'; scan.offsetHeight; scan.style.animation = '';
-  setTimeout(() => {
-    const d = aiData[Math.floor(Math.random()*aiData.length)];
+  
+  fetch(`${window.API_BASE_URL}/v1/ai/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chainId: 5042002,
+      to: addr,
+      amount: amt,
+      token: document.getElementById('i-token-lbl').textContent || 'USDC'
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const riskBar = document.getElementById('risk-bar');
+    const riskVal = document.getElementById('risk-val');
+    const riskWrap = document.getElementById('risk-wrap');
+    const aiChecks = document.getElementById('ai-checks');
+    const aiMsg = document.getElementById('ai-msg');
+    
     bar.style.width = '0%';
-    bar.style.background = d.risk < 30 ? 'var(--green)' : d.risk < 60 ? 'var(--amber)' : 'var(--red)';
-    document.getElementById('risk-val').textContent = d.risk+' / 100';
+    bar.style.background = data.cls < 30 ? 'var(--green)' : data.cls < 60 ? 'var(--amber)' : 'var(--red)';
+    riskVal.textContent = data.risk + ' / 100';
     wrap.style.display = 'block';
-    setTimeout(() => { bar.style.width = d.risk+'%'; }, 40);
-    chks.style.display = 'flex';
-    chks.innerHTML = d.checks.map(c =>
+    setTimeout(() => { bar.style.width = data.risk+'%'; }, 40);
+    
+    aiChecks.innerHTML = data.checks.map(c =>
       `<div class="ai-check"><div class="ai-check-dot" style="background:${c.ok ? 'var(--green)' : 'var(--amber)'}"></div><span style="color:${c.ok ? 'var(--text2)' : 'var(--amber)'}; font-size:12px">${c.label}</span></div>`
     ).join('');
-    msg.className = 'ai-msg '+d.cls;
-    msg.textContent = d.msg;
-    document.getElementById('ai-time').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    
+    aiMsg.className = 'ai-msg ' + data.cls;
+    aiMsg.textContent = data.msg;
+    ttl.textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  })
+  .catch(e => {
+    console.error('AI analysis failed', e);
+    toast('Analysis failed, check connection');
+  })
+  .finally(() => {
     running = false;
-  }, 1800);
+  });
+  
+  // Remove the old setTimeout that used aiData
+  // The original setTimeout is replaced by the fetch above
 }
 
 /* ── simulation ── */
