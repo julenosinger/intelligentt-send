@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intelligent Send · GenLayer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0a0a0f;--surface:#111118;--surface2:#18181f;--surface3:#1e1e2e;
+  --border:#1e1e2e;--border2:#2a2a3e;
+  --indigo:#6366f1;--indigo-dim:#3d3f8f;--indigo-bg:rgba(99,102,241,0.08);--indigo-glow:rgba(99,102,241,0.18);
+  --text:#e8e8f0;--text2:#8888a8;--text3:#52526a;
+  --green:#22c55e;--green-bg:rgba(34,197,94,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#ef4444;--red-bg:rgba(239,68,68,0.1);
+  --purple:#a855f7;--purple-bg:rgba(168,85,247,0.1);
+  --radius:10px;--mono:'JetBrains Mono',monospace;--sans:'Inter',system-ui,sans-serif;
+  --card-shadow:0 0 0 1px var(--border),0 8px 32px rgba(0,0,0,.4);
+}
+[data-theme="light"]{
+  --bg:#f4f4f8;--surface:#fff;--surface2:#f8f8fc;--surface3:#eeeef6;
+  --border:#e2e2ee;--border2:#d0d0e0;
+  --indigo:#4f46e5;--indigo-dim:#a5b4fc;--indigo-bg:rgba(79,70,229,0.06);--indigo-glow:rgba(79,70,229,0.15);
+  --text:#111128;--text2:#555570;--text3:#9090b0;
+  --green:#16a34a;--green-bg:rgba(22,163,74,0.08);
+  --amber:#d97706;--amber-bg:rgba(217,119,6,0.08);
+  --red:#dc2626;--red-bg:rgba(220,38,38,0.08);
+  --purple:#7c3aed;--purple-bg:rgba(124,58,237,0.08);
+  --card-shadow:0 0 0 1px var(--border),0 4px 24px rgba(0,0,0,.08);
+}
+
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:1.5rem 1rem 4rem;transition:background .2s,color .2s}
+
+/* ── layout ── */
+.app{width:100%;max-width:440px;display:flex;flex-direction:column;gap:12px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--card-shadow)}
+
+/* ── topbar ── */
+.topbar{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.logo{font-size:14px;font-weight:600;letter-spacing:-.01em}
+.logo-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1px}
+.topbar-right{display:flex;align-items:center;gap:8px;margin-left:auto}
+
+.theme-btn{width:30px;height:30px;border-radius:50%;background:var(--surface2);border:1px solid var(--border2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:background .15s}
+.theme-btn:hover{background:var(--surface3)}
+
+.net-pill{display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:4px 10px;font-size:11px;color:var(--text2);font-family:var(--mono)}
+.net-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+
+/* ── wallet bar ── */
+.wallet-bar{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.wallet-btn{flex:1;padding:9px 14px;background:var(--indigo);color:#fff;border:none;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;transition:opacity .15s;font-family:var(--sans)}
+.wallet-btn:hover{opacity:.88}
+.wallet-connected{display:none;width:100%;align-items:center;gap:10px}
+.wallet-connected.show{display:flex}
+.wallet-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--indigo),var(--purple));flex-shrink:0}
+.wallet-addr{font-size:12px;font-family:var(--mono);color:var(--text2);flex:1}
+.wallet-bals{display:flex;gap:6px;flex-wrap:wrap}
+.bal-chip{font-size:11px;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:3px 8px;color:var(--text)}
+.disconnect-btn{font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:4px}
+.disconnect-btn:hover{color:var(--red)}
+
+/* ── tabs ── */
+.tabs{display:flex;border-bottom:1px solid var(--border)}
+.tab{flex:1;padding:10px 6px;font-size:12px;font-weight:500;color:var(--text3);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;display:flex;align-items:center;justify-content:center;gap:5px}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--indigo);border-bottom-color:var(--indigo)}
+.ai-chip{font-size:10px;background:var(--indigo-bg);color:var(--indigo);border-radius:20px;padding:1px 6px;border:1px solid var(--indigo-dim)}
+
+/* ── panels ── */
+.panels{padding:18px}
+.panel{display:none}
+.panel.active{display:block}
+
+/* ── fields ── */
+.field{margin-bottom:13px;position:relative}
+.label{display:block;font-size:11px;font-weight:500;color:var(--text3);margin-bottom:5px;letter-spacing:.04em}
+input[type=text],input[type=number],select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:14px;padding:10px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
+input::placeholder,textarea::placeholder{color:var(--text3)}
+input:focus,select:focus,textarea:focus{border-color:var(--indigo-dim);box-shadow:0 0 0 3px var(--indigo-glow)}
+textarea{resize:none;font-size:13px;font-family:var(--mono);line-height:1.5}
+
+.field-valid input{border-color:var(--green)!important}
+.field-invalid input{border-color:var(--red)!important}
+.field-status{position:absolute;right:12px;top:33px;font-size:12px;pointer-events:none}
+.ens-badge{position:absolute;right:12px;top:33px;font-size:11px;font-family:var(--mono);color:var(--green);pointer-events:none;background:var(--surface2);padding:2px 6px;border-radius:4px}
+
+.amount-row{display:flex;gap:8px}
+.amount-row input{flex:1}
+.token-pill{padding:10px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;font-weight:500;font-family:var(--mono);color:var(--text);white-space:nowrap;cursor:pointer;transition:background .15s}
+.token-pill:hover{background:var(--surface3)}
+
+.select-wrap{position:relative}
+.select-wrap select{cursor:pointer;padding-right:32px;appearance:none}
+.select-wrap::after{content:'▾';position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text3);pointer-events:none}
+
+.max-btn{position:absolute;right:100px;top:28px;font-size:10px;background:var(--indigo-bg);color:var(--indigo);border:1px solid var(--indigo-dim);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:var(--mono)}
+.max-btn:hover{background:var(--indigo);color:#fff}
+
+/* ── buttons ── */
+.btn{width:100%;padding:11px 16px;border:none;border-radius:var(--radius);font-size:14px;font-weight:500;font-family:var(--sans);cursor:pointer;transition:opacity .15s,transform .1s}
+.btn:active{transform:scale(.99)}
+.btn-primary{background:var(--indigo);color:#fff}
+.btn-primary:hover{opacity:.88}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border2);margin-top:8px}
+.btn-ghost:hover{background:var(--surface2);color:var(--text)}
+.btn-outline{background:transparent;color:var(--indigo);border:1px solid var(--indigo-dim);margin-bottom:13px}
+.btn-outline:hover{background:var(--indigo-bg)}
+.btn-deploy{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff}
+.btn-deploy:hover{opacity:.88}
+.btn-sim{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(168,85,247,.3);margin-bottom:8px}
+.btn-sim:hover{background:var(--purple);color:#fff}
+
+/* ── review card ── */
+.review-box{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);margin-bottom:13px;overflow:hidden}
+.review-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.review-row:last-child{border-bottom:none}
+.review-key{color:var(--text3)}
+.review-val{color:var(--text);font-family:var(--mono);font-size:12px}
+
+/* ── gas estimator ── */
+.gas-row{display:flex;gap:6px;margin-bottom:13px}
+.gas-chip{flex:1;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:9px 10px;text-align:center;cursor:pointer;transition:all .15s}
+.gas-chip.active{border-color:var(--indigo);background:var(--indigo-bg)}
+.gas-chip-label{font-size:10px;color:var(--text3);margin-bottom:3px}
+.gas-chip-val{font-size:12px;font-family:var(--mono);color:var(--text);font-weight:500}
+.gas-chip-usd{font-size:10px;color:var(--text3);margin-top:2px}
+
+/* ── AI box ── */
+.ai-box{background:var(--surface2);border:1px solid var(--indigo-dim);border-radius:var(--radius);margin-bottom:13px;overflow:hidden;display:none}
+.ai-box.show{display:block}
+.ai-scan{height:2px;background:var(--border);position:relative;overflow:hidden}
+.ai-scan-bar{position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,var(--indigo),transparent);animation:scan 1.2s ease-in-out forwards}
+@keyframes scan{to{left:100%}}
+.ai-head{display:flex;align-items:center;gap:8px;padding:12px 14px 8px}
+.ai-icon{width:22px;height:22px;border-radius:50%;background:var(--indigo-bg);border:1px solid var(--indigo-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ai-label{font-size:11px;font-weight:500;color:var(--indigo);letter-spacing:.04em}
+.ai-time{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+.risk-wrap{padding:0 14px 6px}
+.risk-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:5px}
+.risk-track{height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.risk-bar{height:100%;border-radius:2px;transition:width .5s cubic-bezier(.4,0,.2,1);width:0%}
+.ai-checks{padding:0 14px 10px;display:flex;flex-direction:column;gap:5px}
+.ai-check{display:flex;align-items:center;gap:7px;font-size:12px}
+.ai-check-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ai-msg{padding:8px 14px 14px;font-size:13px;line-height:1.55;border-top:1px solid var(--border)}
+.ai-msg.ok{color:var(--green)}
+.ai-msg.warn{color:var(--amber)}
+.ai-msg.err{color:var(--red)}
+.ai-msg.spin{color:var(--text2);display:flex;align-items:center;gap:8px;border-top:none}
+
+/* ── simulation box ── */
+.sim-box{background:var(--purple-bg);border:1px solid rgba(168,85,247,.25);border-radius:var(--radius);padding:12px 14px;margin-bottom:13px;display:none}
+.sim-box.show{display:block}
+.sim-title{font-size:11px;font-weight:500;color:var(--purple);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sim-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+.sim-key{color:var(--text3)}
+.sim-val{font-family:var(--mono);color:var(--text)}
+.sim-ok{color:var(--green)!important}
+.sim-warn{color:var(--amber)!important}
+
+/* ── conditions ── */
+.conds-wrap{border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden;margin-bottom:13px}
+.cond-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;background:var(--surface2)}
+.cond-row:last-of-type{border-bottom:none}
+.cond-row:hover{background:var(--surface3)}
+.cbox{width:16px;height:16px;border-radius:4px;flex-shrink:0;border:1px solid var(--border2);transition:all .12s;display:flex;align-items:center;justify-content:center}
+.cbox.on{background:var(--indigo);border-color:var(--indigo)}
+.cbox.on svg{display:block}
+.cbox svg{display:none;width:10px;height:10px}
+.cond-name{font-size:13px;color:var(--text);flex:1}
+.cond-tag{font-size:10px;color:var(--text3);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2px 7px;font-family:var(--mono)}
+.cond-expand{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:none}
+.cond-expand.show{display:block}
+.cond-expand .label{font-size:11px}
+.cond-expand input,.cond-expand select,.cond-expand textarea{font-size:13px;padding:8px 10px}
+
+/* ── templates ── */
+.tpl-row{display:flex;gap:6px;margin-bottom:13px;flex-wrap:wrap}
+.tpl-chip{font-size:11px;font-family:var(--mono);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:5px 10px;cursor:pointer;color:var(--text2);transition:all .15s;white-space:nowrap}
+.tpl-chip:hover{border-color:var(--indigo-dim);color:var(--indigo);background:var(--indigo-bg)}
+.tpl-save{font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:5px 8px;border-radius:6px;font-family:var(--sans)}
+.tpl-save:hover{color:var(--indigo)}
+
+/* ── history panel ── */
+.hist-panel{display:none}
+.hist-panel.show{display:block}
+.hist-empty{text-align:center;padding:32px 0;color:var(--text3);font-size:13px}
+.hist-item{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)}
+.hist-item:last-child{border-bottom:none}
+.hist-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px}
+.hist-icon.out{background:var(--indigo-bg);color:var(--indigo)}
+.hist-icon.in{background:var(--green-bg);color:var(--green)}
+.hist-icon.pend{background:var(--amber-bg);color:var(--amber)}
+.hist-icon.fail{background:var(--red-bg);color:var(--red)}
+.hist-info{flex:1;min-width:0}
+.hist-addr{font-size:12px;font-family:var(--mono);color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-time{font-size:11px;color:var(--text3);margin-top:1px}
+.hist-right{text-align:right;flex-shrink:0}
+.hist-amt{font-size:13px;font-weight:500;font-family:var(--mono)}
+.hist-amt.out{color:var(--text)}
+.hist-amt.in{color:var(--green)}
+.hist-status{font-size:10px;margin-top:2px;padding:1px 6px;border-radius:10px;display:inline-block}
+.hist-status.confirmed{background:var(--green-bg);color:var(--green)}
+.hist-status.pending{background:var(--amber-bg);color:var(--amber)}
+.hist-status.failed{background:var(--red-bg);color:var(--red)}
+.hist-link{font-size:10px;color:var(--indigo);cursor:pointer;text-decoration:none;margin-top:2px;display:block}
+
+/* ── active badges ── */
+.active-conds{margin-bottom:13px;display:none}
+.active-conds.show{display:block}
+.active-conds-label{font-size:11px;color:var(--text3);margin-bottom:6px}
+.badges{display:flex;flex-wrap:wrap;gap:5px}
+.badge{font-size:11px;color:var(--indigo);background:var(--indigo-bg);border:1px solid var(--indigo-dim);border-radius:20px;padding:3px 9px;font-family:var(--mono)}
+
+/* ── qr modal ── */
+.qr-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;display:none}
+.qr-overlay.show{display:flex}
+.qr-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:280px;text-align:center}
+.qr-title{font-size:14px;font-weight:500;margin-bottom:4px}
+.qr-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:16px}
+.qr-grid{display:grid;grid-template-columns:repeat(21,1fr);gap:1px;width:168px;margin:0 auto 16px;background:var(--surface2);padding:8px;border-radius:8px}
+.qr-cell{aspect-ratio:1;border-radius:1px}
+.qr-addr-display{font-size:10px;font-family:var(--mono);color:var(--text2);word-break:break-all;padding:8px;background:var(--surface2);border-radius:6px;margin-bottom:12px}
+.qr-close{background:none;border:1px solid var(--border2);border-radius:var(--radius);padding:8px 20px;color:var(--text2);cursor:pointer;font-size:13px;font-family:var(--sans)}
+.qr-close:hover{color:var(--text)}
+
+/* ── misc ── */
+.divider{height:1px;background:var(--border);margin:14px 0}
+.section-title{font-size:11px;font-weight:500;color:var(--text3);margin-bottom:10px;letter-spacing:.05em}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:13px;height:13px;border:2px solid var(--border2);border-top-color:var(--indigo);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+.toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:10px 18px;border-radius:var(--radius);font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;z-index:200;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+
+@media(max-width:480px){body{padding:.5rem .5rem 3rem}
+.app{max-width:100%}.gas-row{flex-direction:row}}
+</style>
+</head>
+<body>
+
+<div class="app">
+<div class="card">
+
+  <!-- topbar -->
+  <div class="topbar">
+    <div>
+      <div class="logo">Intelligent Send</div>
+      <div class="logo-sub">GenLayer · Arc Testnet</div>
+    </div>
+    <div class="topbar-right">
+      <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" title="Toggle theme">🌙</button>
+      <div class="net-pill"><span class="net-dot"></span>5042002</div>
+    </div>
+  </div>
+
+  <!-- wallet bar -->
+  <div class="wallet-bar">
+    <button class="wallet-btn" id="connect-btn" onclick="connectWallet()">Connect Wallet</button>
+    <div class="wallet-connected" id="wallet-info">
+      <div class="wallet-avatar"></div>
+      <div style="flex:1;min-width:0">
+        <div class="wallet-addr" id="wallet-addr-display">0x…</div>
+        <div class="wallet-bals" id="wallet-bals"></div>
+      </div>
+      <button class="disconnect-btn" onclick="disconnectWallet()" title="Disconnect">✕</button>
+    </div>
+  </div>
+
+  <!-- tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('basic')">Basic</button>
+    <button class="tab" onclick="switchTab('intelligent')">Intelligent <span class="ai-chip">AI</span></button>
+    <button class="tab" onclick="switchTab('advanced')">Advanced</button>
+    <button class="tab" onclick="switchTab('history')">History</button>
+  </div>
+
+  <div class="panels">
+
+    <!-- ═══ BASIC ═══ -->
+    <div class="panel active" id="panel-basic">
+      <div id="basic-form">
+        <div class="field">
+          <label class="label">Token</label>
+          <div class="select-wrap">
+            <select id="b-token" onchange="document.getElementById('b-pill').textContent=this.value">
+              <option>USDC</option><option>EURC</option><option>ARC</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field" id="b-addr-field">
+          <label class="label">Recipient</label>
+          <input type="text" id="b-addr" placeholder="0x… or name.eth" oninput="validateAddr('b-addr','b-addr-field','b-ens')" />
+          <span class="ens-badge" id="b-ens" style="display:none"></span>
+          <button class="qr-btn" onclick="openQR('b-addr')" style="position:absolute;right:12px;top:28px;background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3)" title="Scan QR">⬡</button>
+        </div>
+
+        <div class="field" style="position:relative">
+          <label class="label">Amount</label>
+          <button class="max-btn" onclick="setMax('b-amount','b-token')">MAX</button>
+          <div class="amount-row">
+            <input type="number" id="b-amount" placeholder="0.00" min="0" step="0.01" />
+            <div class="token-pill" id="b-pill">USDC</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="section-title">Network fee</div>
+        <div class="gas-row" id="b-gas">
+          <div class="gas-chip active" onclick="selectGas(this,'b-gas')">
+            <div class="gas-chip-label">Economy</div>
+            <div class="gas-chip-val">0.0008 ARC</div>
+            <div class="gas-chip-usd">~$0.04</div>
+          </div>
+          <div class="gas-chip" onclick="selectGas(this,'b-gas')">
+            <div class="gas-chip-label">Standard</div>
+            <div class="gas-chip-val">0.0015 ARC</div>
+            <div class="gas-chip-usd">~$0.07</div>
+          </div>
+          <div class="gas-chip" onclick="selectGas(this,'b-gas')">
+            <div class="gas-chip-label">Fast</div>
+            <div class="gas-chip-val">0.0028 ARC</div>
+            <div class="gas-chip-usd">~$0.13</div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="goReview()">Review transaction</button>
+      </div>
+
+      <div id="basic-review" style="display:none">
+        <div class="section-title">Review</div>
+        <div class="review-box">
+          <div class="review-row"><span class="review-key">Token</span><span class="review-val" id="rv-token">—</span></div>
+          <div class="review-row"><span class="review-key">To</span><span class="review-val" id="rv-addr">—</span></div>
+          <div class="review-row"><span class="review-key">Amount</span><span class="review-val" id="rv-amt">—</span></div>
+          <div class="review-row"><span class="review-key">Network fee</span><span class="review-val" id="rv-fee">—</span></div>
+          <div class="review-row"><span class="review-key">Total cost</span><span class="review-val" id="rv-total">—</span></div>
+          <div class="review-row"><span class="review-key">Network</span><span class="review-val">Arc Testnet</span></div>
+          <div class="review-row"><span class="review-key">Estimated time</span><span class="review-val" id="rv-time">—</span></div>
+        </div>
+        <button class="btn btn-primary" onclick="doSend('basic')">Confirm & send</button>
+        <button class="btn btn-ghost" onclick="backBasic()">← Back</button>
+      </div>
+    </div>
+
+    <!-- ═══ INTELLIGENT ═══ -->
+    <div class="panel" id="panel-intelligent">
+      <div class="field" id="i-addr-field">
+        <label class="label">Recipient</label>
+        <input type="text" id="i-addr" placeholder="0x… or name.eth" oninput="validateAddr('i-addr','i-addr-field','i-ens')" />
+        <span class="ens-badge" id="i-ens" style="display:none"></span>
+      </div>
+      <div class="field" style="position:relative">
+        <label class="label">Amount</label>
+        <button class="max-btn" onclick="setMax('i-amount','i-token-lbl')" style="right:90px">MAX</button>
+        <div class="amount-row">
+          <input type="number" id="i-amount" placeholder="0.00" min="0" step="0.01" />
+          <div class="token-pill" id="i-token-lbl">USDC</div>
+        </div>
+      </div>
+
+      <button class="btn btn-outline" onclick="runAnalysis()">✦ Analyze with GenLayer AI</button>
+
+      <div class="ai-box" id="ai-box">
+        <div class="ai-scan"><div class="ai-scan-bar" id="ai-scan-bar"></div></div>
+        <div class="ai-head">
+          <div class="ai-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--indigo)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <span class="ai-label">GenLayer AI</span>
+          <span class="ai-time" id="ai-time"></span>
+        </div>
+        <div class="risk-wrap" id="risk-wrap" style="display:none">
+          <div class="risk-meta"><span>Risk score</span><span id="risk-val">—</span></div>
+          <div class="risk-track"><div class="risk-bar" id="risk-bar"></div></div>
+        </div>
+        <div class="ai-checks" id="ai-checks" style="display:none"></div>
+        <div class="ai-msg spin" id="ai-msg"><div class="spinner"></div> Analyzing…</div>
+      </div>
+
+      <div class="divider"></div>
+      <button class="btn btn-primary" onclick="doSend('intelligent')">Send</button>
+    </div>
+
+    <!-- ═══ ADVANCED ═══ -->
+    <div class="panel" id="panel-advanced">
+      <div class="section-title">Templates</div>
+      <div class="tpl-row" id="tpl-list">
+        <div class="tpl-chip" onclick="loadTemplate('salary')">💼 Salary</div>
+        <div class="tpl-chip" onclick="loadTemplate('supplier')">🏭 Supplier</div>
+        <div class="tpl-chip" onclick="loadTemplate('dca')">📈 DCA weekly</div>
+        <button class="tpl-save" onclick="saveTemplate()">+ Save current</button>
+      </div>
+
+      <div class="section-title">Conditions</div>
+      <div class="conds-wrap">
+        <div>
+          <div class="cond-row" onclick="toggleCond(this,'exp-bal')">
+            <div class="cbox" id="chk-bal"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Keep minimum balance</span>
+          </div>
+          <div class="cond-expand" id="exp-bal">
+            <label class="label">Minimum balance (USDC)</label>
+            <input type="number" id="cond-min-bal" placeholder="100.00" />
+          </div>
+        </div>
+        <div>
+          <div class="cond-row" onclick="toggleCond(this,'exp-max')">
+            <div class="cbox" id="chk-max"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Maximum transfer amount</span>
+          </div>
+          <div class="cond-expand" id="exp-max">
+            <label class="label">Cap per transfer (USDC)</label>
+            <input type="number" id="cond-max-amt" placeholder="500.00" />
+          </div>
+        </div>
+        <div>
+          <div class="cond-row" onclick="toggleCond(this,'exp-allow')">
+            <div class="cbox" id="chk-allow"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Recipient must be approved</span>
+            <span class="cond-tag">allowlist</span>
+          </div>
+          <div class="cond-expand" id="exp-allow">
+            <label class="label">Approved addresses (one per line)</label>
+            <textarea rows="3" placeholder="0x…"></textarea>
+          </div>
+        </div>
+        <div>
+          <div class="cond-row" onclick="toggleCond(this,'exp-oracle')">
+            <div class="cbox" id="chk-oracle"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Execute only after condition</span>
+            <span class="cond-tag">oracle</span>
+          </div>
+          <div class="cond-expand" id="exp-oracle">
+            <label class="label">Condition (natural language)</label>
+            <input type="text" id="cond-oracle-txt" placeholder="e.g. ETH price above $4,000" />
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">GenLayer AI will verify this condition on-chain before executing.</div>
+          </div>
+        </div>
+        <div>
+          <div class="cond-row" onclick="toggleCond(this,'exp-rec')">
+            <div class="cbox" id="chk-rec"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Recurring transfer</span>
+          </div>
+          <div class="cond-expand" id="exp-rec">
+            <label class="label">Interval</label>
+            <div class="select-wrap">
+              <select id="cond-rec-interval"><option>Daily</option><option>Weekly</option><option selected>Monthly</option></select>
+            </div>
+          </div>
+        </div>
+        <div style="border-bottom:none">
+          <div class="cond-row" style="border-bottom:none" onclick="toggleCond(this,'exp-sched')">
+            <div class="cbox" id="chk-sched"><svg viewBox="0 0 10 8" fill="none" stroke="#fff" stroke-width="1.8"><polyline points="1,4 4,7 9,1"/></svg></div>
+            <span class="cond-name">Schedule</span>
+          </div>
+          <div class="cond-expand" id="exp-sched" style="border-bottom:none">
+            <label class="label">Execute at (UTC)</label>
+            <input type="text" placeholder="2025-12-01 14:00" />
+          </div>
+        </div>
+      </div>
+
+      <div class="active-conds" id="active-wrap">
+        <div class="active-conds-label">Active conditions</div>
+        <div class="badges" id="badge-list"></div>
+      </div>
+
+      <div class="field" id="a-addr-field">
+        <label class="label">Recipient</label>
+        <input type="text" id="a-addr" placeholder="0x… or name.eth" oninput="validateAddr('a-addr','a-addr-field','a-ens')" />
+        <span class="ens-badge" id="a-ens" style="display:none"></span>
+      </div>
+      <div class="field" style="position:relative">
+        <label class="label">Amount (USDC)</label>
+        <button class="max-btn" onclick="setMax('a-amount','')">MAX</button>
+        <input type="number" id="a-amount" placeholder="0.00" min="0" step="0.01" />
+      </div>
+
+      <div class="divider"></div>
+      <button class="btn btn-sim" onclick="runSimulation()">▶ Simulate before deploying</button>
+
+      <div class="sim-box" id="sim-box">
+        <div class="sim-title"><div class="spinner" style="border-top-color:var(--purple)" id="sim-spin"></div> <span id="sim-title-text">Running simulation…</span></div>
+        <div id="sim-results"></div>
+      </div>
+
+      <button class="btn btn-deploy" onclick="doSend('advanced')">Deploy smart transfer</button>
+    </div>
+
+    <!-- ═══ HISTORY ═══ -->
+    <div class="panel" id="panel-history">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="section-title" style="margin:0">Transactions</div>
+        <button style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer" onclick="clearHistory()">Clear</button>
+      </div>
+      <div id="hist-list">
+        <div class="hist-empty" id="hist-empty">Connect wallet to see history</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- QR modal -->
+<div class="qr-overlay" id="qr-overlay" onclick="closeQR(event)">
+  <div class="qr-card">
+    <div class="qr-title">Scan recipient address</div>
+    <div class="qr-sub">Point camera to a wallet QR code</div>
+    <div class="qr-grid" id="qr-grid"></div>
+    <div class="qr-addr-display" id="qr-addr-text">Waiting for camera…</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="qr-close" onclick="closeQR()">Cancel</button>
+      <button class="qr-close" style="background:var(--indigo);color:#fff;border-color:var(--indigo)" onclick="useQRAddr()">Use address</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── theme ── */
+let isDark = true;
+function toggleTheme(){
+  isDark = !isDark;
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  document.getElementById('theme-btn').textContent = isDark ? '🌙' : '☀️';
+}
+
+/* ── tabs ── */
+const tabNames = ['basic','intelligent','advanced','history'];
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabNames[i] === name));
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', tabNames[i] === name));
+}
+
+/* ── wallet ── */
+const MOCK_ADDR = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
+const BALANCES = { USDC: '1,240.50', EURC: '320.00', ARC: '58.72' };
+let walletConnected = false;
+
+function connectWallet(){
+  // simulate wallet connect
+  document.getElementById('connect-btn').textContent = 'Connecting…';
+  setTimeout(() => {
+    walletConnected = true;
+    document.getElementById('connect-btn').style.display = 'none';
+    const wi = document.getElementById('wallet-info');
+    wi.classList.add('show');
+    const addr = MOCK_ADDR;
+    document.getElementById('wallet-addr-display').textContent = addr.slice(0,8)+'…'+addr.slice(-6);
+    const bals = document.getElementById('wallet-bals');
+    bals.innerHTML = Object.entries(BALANCES).map(([t,b]) =>
+      `<span class="bal-chip">${b} ${t}</span>`).join('');
+    renderHistory();
+    toast('Wallet connected ✓');
+  }, 900);
+}
+
+function disconnectWallet(){
+  walletConnected = false;
+  document.getElementById('connect-btn').style.display = 'block';
+  document.getElementById('connect-btn').textContent = 'Connect Wallet';
+  document.getElementById('wallet-info').classList.remove('show');
+  document.getElementById('hist-list').innerHTML = '<div class="hist-empty" id="hist-empty">Connect wallet to see history</div>';
+}
+
+function setMax(inputId, tokenId){
+  const tok = tokenId ? document.getElementById(tokenId)?.textContent : 'USDC';
+  const bal = parseFloat((BALANCES[tok] || '0').replace(',',''));
+  document.getElementById(inputId).value = (bal - 0.01).toFixed(2);
+}
+
+/* ── address validation + ENS ── */
+const ENS_MAP = { 'juleno.eth':'0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345', 'vitalik.eth':'0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' };
+
+function validateAddr(inputId, fieldId, ensId){
+  const val = document.getElementById(inputId).value.trim();
+  const field = document.getElementById(fieldId);
+  const ens = document.getElementById(ensId);
+  ens.style.display = 'none';
+  field.className = 'field';
+  if (!val) return;
+  if (val.endsWith('.eth')) {
+    const resolved = ENS_MAP[val.toLowerCase()];
+    if (resolved) {
+      ens.style.display = 'block';
+      ens.textContent = '✓ ' + resolved.slice(0,10)+'…';
+      field.className = 'field field-valid';
+    } else {
+      ens.style.display = 'block';
+      ens.style.color = 'var(--amber)';
+      ens.textContent = '? resolving…';
+      field.className = 'field';
+    }
+    return;
+  }
+  const isValid = /^0x[0-9a-fA-F]{40}$/.test(val);
+  field.className = 'field ' + (isValid ? 'field-valid' : (val.length > 4 ? 'field-invalid' : ''));
+}
+
+/* ── gas selector ── */
+const GAS_DATA = [
+  {label:'Economy',val:'0.0008 ARC',usd:'$0.04',time:'~120s'},
+  {label:'Standard',val:'0.0015 ARC',usd:'$0.07',time:'~30s'},
+  {label:'Fast',val:'0.0028 ARC',usd:'$0.13',time:'~10s'},
+];
+function selectGas(el, groupId){
+  document.querySelectorAll('#'+groupId+' .gas-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+function getSelectedGas(groupId){
+  const chips = document.querySelectorAll('#'+groupId+' .gas-chip');
+  for(let i=0;i<chips.length;i++) if(chips[i].classList.contains('active')) return GAS_DATA[i];
+  return GAS_DATA[1];
+}
+
+/* ── basic flow ── */
+function goReview(){
+  const addr = document.getElementById('b-addr').value.trim();
+  const amt  = document.getElementById('b-amount').value;
+  const tok  = document.getElementById('b-token').value;
+  if (!addr || !amt) { toast('Fill in all fields'); return; }
+  const gas  = getSelectedGas('b-gas');
+  document.getElementById('rv-token').textContent = tok;
+  const display = addr.endsWith('.eth') ? addr : (addr.length > 22 ? addr.slice(0,10)+'…'+addr.slice(-6) : addr);
+  document.getElementById('rv-addr').textContent  = display;
+  document.getElementById('rv-amt').textContent   = parseFloat(amt).toFixed(2)+' '+tok;
+  document.getElementById('rv-fee').textContent   = gas.val+' ('+gas.usd+')';
+  document.getElementById('rv-total').textContent = parseFloat(amt).toFixed(2)+' '+tok+' + '+gas.val;
+  document.getElementById('rv-time').textContent  = gas.time;
+  document.getElementById('basic-form').style.display = 'none';
+  document.getElementById('basic-review').style.display = 'block';
+}
+function backBasic(){
+  document.getElementById('basic-form').style.display = 'block';
+  document.getElementById('basic-review').style.display = 'none';
+}
+
+/* ── send + history ── */
+const txHistory = [];
+function doSend(mode){
+  const msgs = { basic:'Transaction submitted ✓', intelligent:'Transaction submitted ✓', advanced:'Smart transfer deployed ✓' };
+  const addrMap = { basic:'b-addr', intelligent:'i-addr', advanced:'a-addr' };
+  const amtMap  = { basic:'b-amount', intelligent:'i-amount', advanced:'a-amount' };
+  const addr = document.getElementById(addrMap[mode])?.value || '0xUnknown';
+  const amt  = document.getElementById(amtMap[mode])?.value || '0';
+  txHistory.unshift({
+    type:'out', addr: addr.length > 22 ? addr.slice(0,10)+'…'+addr.slice(-6) : addr,
+    amount: parseFloat(amt).toFixed(2)+' USDC',
+    time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+    status: mode === 'advanced' ? 'pending' : 'confirmed',
+    hash: '0x'+Math.random().toString(16).slice(2,12)+'…'
+  });
+  toast(msgs[mode]);
+  if (mode === 'basic') backBasic();
+  renderHistory();
+}
+
+function renderHistory(){
+  const list = document.getElementById('hist-list');
+  if (!walletConnected) { list.innerHTML = '<div class="hist-empty">Connect wallet to see history</div>'; return; }
+  const mock = [
+    { type:'in',  addr:'0xAbC1…9f43', amount:'+500.00 USDC', time:'2h ago',    status:'confirmed', hash:'0xabc123…' },
+    { type:'out', addr:'0x1dE2…7a21', amount:'-120.00 USDC', time:'5h ago',    status:'confirmed', hash:'0xdef456…' },
+    { type:'out', addr:'0x9fF3…2b88', amount:'-80.00 EURC',  time:'Yesterday', status:'failed',    hash:'0x789abc…' },
+    { type:'pend',addr:'0x4aC4…1c77', amount:'-200.00 USDC', time:'Pending',   status:'pending',   hash:'0x…' },
+  ];
+  const all = [...txHistory, ...mock];
+  const icons = { out:'↑', in:'↓', pend:'⟳', fail:'✕' };
+  list.innerHTML = all.map(tx => `
+    <div class="hist-item">
+      <div class="hist-icon ${tx.type === 'fail' || tx.status === 'failed' ? 'fail' : tx.type === 'pend' || tx.status === 'pending' ? 'pend' : tx.type}">
+        ${icons[tx.type === 'fail' || tx.status === 'failed' ? 'fail' : tx.type === 'pend' || tx.status === 'pending' ? 'pend' : tx.type]}
+      </div>
+      <div class="hist-info">
+        <div class="hist-addr">${tx.addr}</div>
+        <div class="hist-time">${tx.time}</div>
+      </div>
+      <div class="hist-right">
+        <div class="hist-amt ${tx.type}">${tx.amount}</div>
+        <span class="hist-status ${tx.status}">${tx.status}</span>
+        <a class="hist-link" onclick="toast('Opening explorer…')">↗ Explorer</a>
+      </div>
+    </div>`).join('');
+}
+
+function clearHistory(){ txHistory.length = 0; renderHistory(); }
+
+/* ── AI analysis ── */
+const aiData = [
+  { risk:9,  cls:'ok',   msg:'Address verified on-chain. No anomalies detected. Safe to proceed.',
+    checks:[{ok:true,label:'Not on OFAC sanctions list'},{ok:true,label:'No blacklist matches (Chainalysis)'},{ok:true,label:'Contract verified on explorer'},{ok:true,label:'Amount within normal range'}]},
+  { risk:38, cls:'warn', msg:'Recipient is an unverified contract. Confirm it can receive ERC-20 tokens.',
+    checks:[{ok:true,label:'Not sanctioned'},{ok:false,label:'Contract source not verified'},{ok:true,label:'No blacklist match'},{ok:false,label:'Amount above 30-day average'}]},
+  { risk:6,  cls:'ok',   msg:'Known wallet — 48 previous txs on Arc Testnet. Low risk.',
+    checks:[{ok:true,label:'Not on OFAC list'},{ok:true,label:'Clean history'},{ok:true,label:'Active wallet (48 txs)'},{ok:true,label:'Amount within range'}]},
+  { risk:61, cls:'warn', msg:'Amount is 3× your 30-day average. Consider splitting the transfer.',
+    checks:[{ok:true,label:'Address clean'},{ok:true,label:'No sanctions match'},{ok:false,label:'Amount 3× monthly avg'},{ok:false,label:'Large single transfer detected'}]},
+];
+let running = false;
+function runAnalysis(){
+  if (running) return;
+  const addr = document.getElementById('i-addr').value.trim();
+  const amt  = document.getElementById('i-amount').value;
+  if (!addr || !amt) { toast('Enter recipient and amount first'); return; }
+  running = true;
+  const box   = document.getElementById('ai-box');
+  const msg   = document.getElementById('ai-msg');
+  const wrap  = document.getElementById('risk-wrap');
+  const chks  = document.getElementById('ai-checks');
+  const bar   = document.getElementById('risk-bar');
+  const scan  = document.getElementById('ai-scan-bar');
+  box.classList.add('show');
+  wrap.style.display = 'none';
+  chks.style.display = 'none';
+  msg.className = 'ai-msg spin';
+  msg.innerHTML = '<div class="spinner"></div> Querying GenLayer oracle…';
+  document.getElementById('ai-time').textContent = '';
+  scan.style.animation = 'none'; scan.offsetHeight; scan.style.animation = '';
+  setTimeout(() => {
+    const d = aiData[Math.floor(Math.random()*aiData.length)];
+    bar.style.width = '0%';
+    bar.style.background = d.risk < 30 ? 'var(--green)' : d.risk < 60 ? 'var(--amber)' : 'var(--red)';
+    document.getElementById('risk-val').textContent = d.risk+' / 100';
+    wrap.style.display = 'block';
+    setTimeout(() => { bar.style.width = d.risk+'%'; }, 40);
+    chks.style.display = 'flex';
+    chks.innerHTML = d.checks.map(c =>
+      `<div class="ai-check"><div class="ai-check-dot" style="background:${c.ok ? 'var(--green)' : 'var(--amber)'}"></div><span style="color:${c.ok ? 'var(--text2)' : 'var(--amber)'}; font-size:12px">${c.label}</span></div>`
+    ).join('');
+    msg.className = 'ai-msg '+d.cls;
+    msg.textContent = d.msg;
+    document.getElementById('ai-time').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    running = false;
+  }, 1800);
+}
+
+/* ── simulation ── */
+function runSimulation(){
+  const addr = document.getElementById('a-addr').value.trim();
+  const amt  = document.getElementById('a-amount').value;
+  const box  = document.getElementById('sim-box');
+  const spin = document.getElementById('sim-spin');
+  const res  = document.getElementById('sim-results');
+  const ttl  = document.getElementById('sim-title-text');
+  box.classList.add('show');
+  res.innerHTML = '';
+  spin.style.display = 'block';
+  ttl.textContent = 'Running simulation on Arc fork…';
+  setTimeout(() => {
+    spin.style.display = 'none';
+    ttl.textContent = 'Simulation complete';
+    const hasBalance = parseFloat((BALANCES.USDC||'0').replace(',','')) >= parseFloat(amt||0);
+    const condOk = document.getElementById('chk-oracle').classList.contains('on') ? Math.random() > .3 : true;
+    res.innerHTML = `
+      <div class="sim-row"><span class="sim-key">Balance check</span><span class="sim-val ${hasBalance ? 'sim-ok' : 'sim-warn'}">${hasBalance ? '✓ Sufficient' : '⚠ Insufficient'}</span></div>
+      <div class="sim-row"><span class="sim-key">Conditions met</span><span class="sim-val ${condOk ? 'sim-ok' : 'sim-warn'}">${condOk ? '✓ All passing' : '⚠ Oracle pending'}</span></div>
+      <div class="sim-row"><span class="sim-key">Gas estimate</span><span class="sim-val">0.0021 ARC (~$0.10)</span></div>
+      <div class="sim-row"><span class="sim-key">Expected outcome</span><span class="sim-val sim-ok">${hasBalance && condOk ? '✓ Transfer succeeds' : '⚠ Would revert'}</span></div>
+    `;
+  }, 1600);
+}
+
+/* ── conditions ── */
+const active = new Set();
+const condLabels = {'exp-bal':'Min balance','exp-max':'Max amount','exp-allow':'Allowlist','exp-oracle':'Oracle','exp-rec':'Recurring','exp-sched':'Scheduled'};
+function toggleCond(row, expId){
+  const chk = row.querySelector('.cbox');
+  const exp = document.getElementById(expId);
+  const on  = !chk.classList.contains('on');
+  chk.classList.toggle('on', on);
+  exp.classList.toggle('show', on);
+  if (on) active.add(expId); else active.delete(expId);
+  const wrap = document.getElementById('active-wrap');
+  const list = document.getElementById('badge-list');
+  if (active.size === 0){ wrap.classList.remove('show'); return; }
+  wrap.classList.add('show');
+  list.innerHTML = [...active].map(k=>`<span class="badge">${condLabels[k]}</span>`).join('');
+}
+
+/* ── templates ── */
+const templates = {
+  salary:   { addr:'0x1dE2…7a21', amt:'2500', interval:'Monthly', oracle:'', rec:true },
+  supplier: { addr:'0x9fF3…2b88', amt:'800',  interval:'Weekly',  oracle:'Invoice approved', rec:true, oracle_on:true },
+  dca:      { addr:'0x4aC4…1c77', amt:'100',  interval:'Weekly',  oracle:'', rec:true },
+};
+function loadTemplate(name){
+  const t = templates[name];
+  if (!t) return;
+  document.getElementById('a-addr').value = t.addr;
+  document.getElementById('a-amount').value = t.amt;
+  if (t.rec){ document.getElementById('cond-rec-interval').value = t.interval; }
+  if (t.oracle_on){ document.getElementById('cond-oracle-txt').value = t.oracle; }
+  toast('Template loaded: '+name);
+}
+function saveTemplate(){
+  const addr = document.getElementById('a-addr').value.trim();
+  const amt  = document.getElementById('a-amount').value;
+  if (!addr || !amt){ toast('Fill recipient and amount first'); return; }
+  toast('Template saved ✓');
+}
+
+/* ── QR (mock) ── */
+let qrTarget = '';
+function openQR(inputId){
+  qrTarget = inputId;
+  document.getElementById('qr-overlay').classList.add('show');
+  renderMockQR();
+  // simulate scanning after 2s
+  setTimeout(() => {
+    const mockAddr = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
+    document.getElementById('qr-addr-text').textContent = mockAddr;
+  }, 1500);
+}
+function renderMockQR(){
+  const grid = document.getElementById('qr-grid');
+  // generate a mock QR-like pattern
+  const size = 21;
+  let html = '';
+  for(let r=0;r<size;r++) for(let c=0;c<size;c++){
+    const finder = (r<7&&c<7)||(r<7&&c>=14)||(r>=14&&c<7);
+    const finderInner = (r>=2&&r<=4&&c>=2&&c<=4)||(r>=2&&r<=4&&c>=16&&c<=18)||(r>=16&&r<=18&&c>=2&&c<=4);
+    const dark = finder || finderInner || (Math.random() > .5 && !finder);
+    html += `<div class="qr-cell" style="background:${dark ? 'var(--text)' : 'transparent'}"></div>`;
+  }
+  grid.innerHTML = html;
+}
+function useQRAddr(){
+  const addr = document.getElementById('qr-addr-text').textContent;
+  if (addr && addr !== 'Waiting for camera…'){
+    document.getElementById(qrTarget).value = addr;
+    validateAddr(qrTarget, qrTarget+'-field', qrTarget.replace('addr','ens'));
+  }
+  closeQR();
+}
+function closeQR(e){
+  if (e && e.target !== document.getElementById('qr-overlay')) return;
+  document.getElementById('qr-overlay').classList.remove('show');
+}
+
+/* ── toast ── */
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2400);
+}
+</script>
+</body>
+</html>
