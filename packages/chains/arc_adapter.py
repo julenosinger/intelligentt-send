@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from typing import Dict, List, Any, Optional
 from eth_abi import encode
 from web3 import Web3
@@ -32,7 +33,7 @@ class ChainAdapter:
         to_address: str,
         value: str = "0",
         data: str = "0x",
-        token: str = "ARC",
+        token: str = "USDC",
         speed: str = "standard",
     ) -> Dict[str, str]:
         raise NotImplementedError
@@ -42,11 +43,14 @@ class ChainAdapter:
         from_address: str,
         to_address: str,
         amount: str,
-        token: str = "ARC",
+        token: str = "USDC",
     ) -> Dict[str, Any]:
         raise NotImplementedError
 
     async def send_raw_tx(self, signed_tx: str) -> str:
+        raise NotImplementedError
+
+    async def get_transaction_receipt(self, tx_hash: str) -> Optional[Dict[str, Any]]:
         raise NotImplementedError
 
 
@@ -112,17 +116,6 @@ class ArcChainAdapter(ChainAdapter):
         except Exception:
             balances["EURC"] = "0.00"
 
-        # ARC native balance
-        try:
-            arc_balance = self.w3.eth.get_balance(addresses)
-            arc_amount = float(self.w3.from_wei(arc_balance, "ether"))
-            if arc_amount > 0:
-                balances["ARC"] = f"{arc_amount:.2f}"
-            else:
-                balances["ARC"] = "0.00"
-        except Exception:
-            balances["ARC"] = "0.00"
-
         return balances
 
     def _erc20_abi(self) -> List[Dict[str, Any]]:
@@ -175,7 +168,7 @@ class ArcChainAdapter(ChainAdapter):
 
         # Calculate fee - Arc uses USDC for gas
         fee_usd = "0.00"
-        fee_token = "0 ARC"
+        fee_token = "0 USDC"
 
         try:
             # Get base fee from latest block
@@ -206,21 +199,24 @@ class ArcChainAdapter(ChainAdapter):
     ) -> Dict[str, Any]:
         """Prepare a token transfer (calldata + to + value + gas).
 
-        For USDC (Arc native gas): ERC-20 transfer calldata = selector + to(32 bytes) + amount(32 bytes)
-        For native ARC: calldata is empty, value = amount
+        ERC-20 branch (USDC/EURC): to = token contract, value = "0", data = ERC-20
+        transfer calldata. USDC on Arc is BOTH the native gas token and an ERC-20;
+        a USDC *transfer* is always an ERC-20 call to the USDC contract, never a
+        native value transfer (see README). The "native" branch is a plain value
+        send with no token contract involved.
         """
         token_addr = self.get_token_address(token)
 
-        if token == "ARC" or token == "native" or token == self.native_token:
-            # Native transfer: calldata empty, value = amount
+        if token and token in self.tokens:
+            # ERC-20 transfer: to = token contract, value = 0, data = calldata
+            calldata = self._erc20_transfer_calldata(to_address, amount)
+            value = "0"
+            response_to = token_addr
+        elif token == "native":
+            # Native value transfer (no token contract involved)
             calldata = "0x"
             value = amount
-            to_addr = to_address
-        elif token and token in self.tokens:
-            # ERC-20 transfer: selector + to(32 bytes) + amount(32 bytes)
-            calldata = self._erc20_transfer_calldata(from_address, to_address, amount)
-            value = "0"
-            to_addr = to_address
+            response_to = to_address
         else:
             raise ValueError(f"Unknown token: {token}")
 
@@ -232,69 +228,83 @@ class ArcChainAdapter(ChainAdapter):
             token=token,
         )
 
-        # Determine the 'to' field in response: use token contract address for ERC-20, or native address
-        response_to = token_addr if token and token in self.tokens else (to_address or token_addr or "0x0000000000000000000000000000000000000000")
-
         return {
             "to": response_to,
             "value": value,
             "data": calldata,
             "gas_limit": gas_estimate["gas"],
             "gas_fee": gas_estimate["gas_usd"],
-            "total_cost": f"{amount} {token} + {gas_estimate['gas_fee']}",
+            "total_cost": f"{amount} {token} + {gas_estimate['fee']}",
         }
 
     def _erc20_transfer_calldata(
         self,
-        from_addr: str,
         to_addr: str,
         amount: str,
     ) -> str:
         """Generate ERC-20 transfer calldata: selector + to(32 bytes) + amount(32 bytes).
 
-        ERC-20 transfer(uint256 amount) = 0xa9059cbb
-        Full encoding: 0xa9059cbb + address(to) padded 32 bytes + amount padded 32 bytes
+        ERC-20 transfer(address,uint256) selector = 0xa9059cbb.
+        Result is 138 hex chars (0x + 136 = 4 + 32 + 32 bytes).
         """
-        transfer_selector = "0xa9059cbb"
-
+        selector = bytes.fromhex("a9059cbb")  # transfer(address,uint256)
         to_address_checksum = self.w3.to_checksum_address(to_addr)
-        amount_int = int(float(amount) * 10**6)  # USDC has 6 decimals on Arc
+        amount_int = int(Decimal(amount) * 10**6)  # USDC has 6 decimals; no float
 
-        # Encode: selector + to_address(32 bytes) + amount(32 bytes)
-        # Using eth_abi encode for proper padding
-        encoded = encode(
-            ["bytes4", "address", "uint256"],
-            [transfer_selector, to_address_checksum, amount_int]
+        payload = encode(
+            ["address", "uint256"],
+            [to_address_checksum, amount_int],
         )
-
-        # eth_abi returns hex with 0x prefix, already 32+32+4 = 64 bytes total
-        return "0x" + encoded.hex()[2:]
+        return "0x" + selector.hex() + payload.hex()
 
     async def send_raw_tx(self, signed_tx: str) -> str:
-        """Send a raw signed transaction.
+        """Broadcast a raw signed transaction via eth_sendRawTransaction.
 
-        In production, this would use eth_sendRawTransaction via the RPC.
-        For now, simulate sending and return a tx hash.
+        Accepts a 0x-prefixed hex string. Raises on RPC error (the API layer
+        turns that into a 502/503).
         """
-        # In production, send via: self.w3.eth.send_raw_transaction(signed_tx)
-        # Return transaction hash
-        return self.w3.to_hex(self.w3.keccak(text=signed_tx))
+        h = self.w3.eth.send_raw_transaction(signed_tx)
+        return self.w3.to_hex(h)
+
+    async def get_transaction_receipt(self, tx_hash: str) -> Optional[Dict[str, Any]]:
+        """Return the transaction receipt via eth_getTransactionReceipt.
+
+        Returns None if the transaction is not yet mined.
+        """
+        try:
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            return None
+        if receipt is None:
+            return None
+        return dict(receipt)
 
 
 # Factory to get chain adapter by chainId
 chain_adapters: Dict[int, ChainAdapter] = {}
 
 
-def get_adapter(chain_id: int, rpc_url: str = None) -> ChainAdapter:
+def get_adapter(
+    chain_id: int,
+    rpc_url: str = None,
+    explorer: str = None,
+    native_token: str = None,
+) -> ChainAdapter:
     """Get the appropriate chain adapter for the given chain_id.
 
-    Returns an ArcChainAdapter for chain 5042002, or raises HTTPException for unknown chains.
+    Returns an ArcChainAdapter for chain 5042002, or a generic EVM adapter for
+    the other registered EVM testnets. The registry (apps/api/main.py CHAINS)
+    supplies rpc_url, explorer and native_token.
     """
     if chain_id not in chain_adapters:
         if chain_id == 5042002:
-            chain_adapters[chain_id] = ArcChainAdapter(rpc_url=rpc_url)
+            chain_adapters[chain_id] = ArcChainAdapter(rpc_url=rpc_url or "https://rpc.testnet.arc.network")
         else:
-            # For other chains, create a generic EVM adapter
             from packages.chains.evm_adapter import EVMChainAdapter
-            chain_adapters[chain_id] = EVMChainAdapter(rpc_url=rpc_url)
+            chain_adapters[chain_id] = EVMChainAdapter(
+                rpc_url=rpc_url or "https://rpc.sepolia.org",
+                chain_id=chain_id,
+                explorer=explorer or "https://sepolia.etherscan.io",
+                native_token=native_token or "ETH",
+            )
     return chain_adapters[chain_id]

@@ -22,11 +22,9 @@ from packages.chains.arc_adapter import ArcChainAdapter, get_adapter, ChainAdapt
 # ── Config ──
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./intelligent_send.db")
 GENLAYER_MOCK = os.getenv("GENLAYER_MOCK", "0") == "1"
-GENLAYER_RPC = os.getenv("GENLAYER_RPC", "https://rpc-bradbury.genlayer.com")
-GENLAYER_NETWORK = os.getenv("GENLAYER_NETWORK", "studio")
+GENLAYER_NETWORK = os.getenv("GENLAYER_NETWORK", "studio")  # bradbury | studio | studio-dev | localnet
 GENLAYER_ACCOUNT_PK = os.getenv("GENLAYER_ACCOUNT_PK", "")
 GENLAYER_RISK_CONTRACT = os.getenv("GENLAYER_RISK_CONTRACT", "")
-GENLAYER_SMART_TRANSFER_CONTRACT = os.getenv("GENLAYER_SMART_TRANSFER_CONTRACT", "")
 
 # Allowed CORS origins
 ALLOWED_ORIGINS = [
@@ -45,7 +43,7 @@ CHAINS = {
         "explorer": "https://testnet.arcscan.app",
         "native_token": "USDC",
         "tokens": [
-            {"symbol": "USDC", "address": "0x36000000000000000000000000000000000000"},
+            {"symbol": "USDC", "address": "0x3600000000000000000000000000000000000000"},
             {"symbol": "EURC", "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a"},
         ],
     },
@@ -216,8 +214,13 @@ def get_rpc_url(chain_id: int) -> str:
     return os.getenv(f"CHAIN_RPC_{chain_id}", "")
 
 def get_adapter_for_chain(chain_id: int) -> ChainAdapter:
-    adapter = get_adapter(chain_id, rpc_url=get_rpc_url(chain_id))
-    return adapter
+    chain = CHAINS.get(chain_id)
+    return get_adapter(
+        chain_id,
+        rpc_url=chain["rpc"] if chain else get_rpc_url(chain_id),
+        explorer=chain["explorer"] if chain else None,
+        native_token=chain["native_token"] if chain else None,
+    )
 
 def get_nonce(address: str) -> str:
     nonce = hashlib.sha256(f"{address}{time.time()}".encode()).hexdigest()[:16]
@@ -229,55 +232,68 @@ def verify_nonce(address: str, signature: str) -> bool:
     # In production: use eth_verifyMessage or similar
     return len(signature) > 0 and address.startswith("0x")
 
-async def call_genlayer_write(function_name: str, args: list, contract_address: str) -> str:
-    """Call a GenLayer Intelligent Contract via write."""
-    from genlayer import create_client
+def _genlayer_client():
+    """Build a genlayer_py client for the configured network (lazy import)."""
+    from genlayer_py import create_account, create_client
+    from genlayer_py import chains as gl_chains
 
-    if not GENLAYER_ACCOUNT_PK:
-        raise HTTPException(status_code=400, detail="GENLAYER_ACCOUNT_PK not set")
+    chain_map = {
+        "bradbury": gl_chains.testnet_bradbury,
+        "studio": gl_chains.studionet,
+        "studionet": gl_chains.studionet,
+        "studio-dev": gl_chains.studio_devnet,
+        "localnet": gl_chains.localnet,
+    }
+    chain = chain_map.get(GENLAYER_NETWORK.lower(), gl_chains.studionet)
 
-    client = create_client(
-        rpc_url=GENLAYER_RPC,
-        network=GENLAYER_NETWORK,
-        account_pk=GENLAYER_ACCOUNT_PK,
-    )
+    account = None
+    if GENLAYER_ACCOUNT_PK:
+        account = create_account(GENLAYER_ACCOUNT_PK)
 
-    tx_hash = await client.write_contract(
+    return create_client(chain=chain, account=account)
+
+
+def _gl_write(contract_address: str, function_name: str, args: list) -> str:
+    """Submit a write and return the transaction hash (sync, run in a thread)."""
+    client = _genlayer_client()
+    return client.write_contract(
         address=contract_address,
         function_name=function_name,
         args=args,
     )
-    return tx_hash
 
-async def wait_genlayer_finalization(tx_hash: str) -> dict:
-    """Wait for GenLayer transaction finalization."""
-    from genlayer import create_client
 
-    client = create_client(
-        rpc_url=GENLAYER_RPC,
-        network=GENLAYER_NETWORK,
-        account_pk=GENLAYER_ACCOUNT_PK,
-    )
-
-    receipt = await client.wait_for_finalization(tx_hash)
-    return receipt
-
-async def call_genlayer_read(function_name: str, args: list, contract_address: str) -> Any:
-    """Read from a GenLayer Intelligent Contract."""
-    from genlayer import create_client
-
-    client = create_client(
-        rpc_url=GENLAYER_RPC,
-        network=GENLAYER_NETWORK,
-        account_pk=GENLAYER_ACCOUNT_PK,
-    )
-
-    result = await client.read_contract(
+def _gl_read(contract_address: str, function_name: str, args: list = None) -> Any:
+    client = _genlayer_client()
+    return client.read_contract(
         address=contract_address,
         function_name=function_name,
-        args=args,
+        args=args or [],
     )
-    return result
+
+
+def _gl_wait(tx_hash: str):
+    client = _genlayer_client()
+    return client.wait_for_finalization(tx_hash)
+
+
+def _gl_deploy(code: str, args: list) -> str:
+    """Deploy a contract from source code and return the finalized address."""
+    client = _genlayer_client()
+    tx_hash = client.deploy_contract(code=code, args=args)
+    tx = client.wait_for_finalization(tx_hash)
+
+    decoded = tx.get("tx_data_decoded") if isinstance(tx, dict) else None
+    if isinstance(decoded, dict):
+        addr = decoded.get("contract_address")
+    else:
+        addr = None
+    if not addr and isinstance(tx, dict):
+        addr = tx.get("recipient")
+
+    if not addr or addr == "0x" + "0" * 40:
+        raise RuntimeError("Finalized deployment has no contract address")
+    return addr
 
 # ── Routes ──
 
@@ -433,7 +449,10 @@ async def prepare_tx(payload: TxPrepare):
     raise HTTPException(status_code=400, detail=f"Unknown mode: {mode}")
 
 async def run_intelligent_analysis(chainId: int, to: str, amount: str, token: str) -> dict:
-    """Run risk analysis via GenLayer RiskAnalyzer contract."""
+    """Run risk analysis via the GenLayer RiskAnalyzer contract.
+
+    Response always carries "mode": "mock" | "live".
+    """
 
     if GENLAYER_MOCK:
         return {
@@ -441,9 +460,7 @@ async def run_intelligent_analysis(chainId: int, to: str, amount: str, token: st
             "cls": "ok",
             "msg": "Mock analysis - GENLAYER_MOCK=1 is set",
             "checks": [
-                {"ok": True, "label": "Not on OFAC sanctions list"},
-                {"ok": True, "label": "No blacklist matches"},
-                {"ok": True, "label": "Contract verified on explorer"},
+                {"ok": True, "label": "Mock check: no on-chain evidence"},
             ],
             "genlayer_tx": None,
             "contract": None,
@@ -451,59 +468,45 @@ async def run_intelligent_analysis(chainId: int, to: str, amount: str, token: st
             "mode": "mock",
         }
 
+    if not GENLAYER_ACCOUNT_PK:
+        raise HTTPException(status_code=400, detail="GENLAYER_ACCOUNT_PK not set")
+
     if not GENLAYER_RISK_CONTRACT:
         raise HTTPException(status_code=400, detail="GENLAYER_RISK_CONTRACT not configured")
 
     try:
-        # Write to the RiskAnalyzer contract
-        tx_hash = await call_genlayer_write(
-            function_name="analyze",
-            args=[to, amount, token, str(chainId), "0x0"],
-            contract_address=GENLAYER_RISK_CONTRACT,
+        tx_hash = await asyncio.to_thread(
+            _gl_write, GENLAYER_RISK_CONTRACT, "analyze", [to, amount, token, str(chainId), to]
         )
 
-        # Wait for finalization
-        receipt = await wait_genlayer_finalization(tx_hash)
+        receipt = await asyncio.to_thread(_gl_wait, tx_hash)
 
-        # Read the result
-        result = await call_genlayer_read(
-            function_name="get_last",
-            args=[],
-            contract_address=GENLAYER_RISK_CONTRACT,
-        )
+        raw = await asyncio.to_thread(_gl_read, GENLAYER_RISK_CONTRACT, "get_last", [])
 
-        # Parse result
-        if isinstance(result, str):
-            try:
-                parsed = json.loads(result)
-                return {
-                    "risk": parsed.get("risk", 0),
-                    "cls": parsed.get("cls", "ok"),
-                    "msg": parsed.get("msg", ""),
-                    "checks": parsed.get("checks", []),
-                    "genlayer_tx": tx_hash,
-                    "contract": GENLAYER_RISK_CONTRACT,
-                    "finalizedAt": receipt.get("timestamp") if isinstance(receipt, dict) else None,
-                }
-            except json.JSONDecodeError:
-                raise HTTPException(status_code=502, detail="Invalid JSON from GenLayer contract")
+        if isinstance(raw, str):
+            raw = raw.strip()
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
 
         return {
-            "risk": 0,
-            "cls": "ok",
-            "msg": "Analysis complete",
-            "checks": [],
+            "risk": parsed.get("risk", 0),
+            "cls": parsed.get("cls", "ok"),
+            "msg": parsed.get("msg", ""),
+            "checks": parsed.get("checks", []),
             "genlayer_tx": tx_hash,
             "contract": GENLAYER_RISK_CONTRACT,
-            "finalizedAt": None,
+            "finalizedAt": receipt.get("current_timestamp") if isinstance(receipt, dict) else None,
+            "mode": "live",
         }
-
+    except HTTPException:
+        raise
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Invalid JSON from GenLayer contract")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"GenLayer unavailable: {e}")
 
 @app.post("/v1/tx/broadcast")
 async def broadcast_tx(payload: TxBroadcast):
-    """Broadcast a raw signed transaction."""
+    """Broadcast a raw signed transaction via eth_sendRawTransaction."""
     signed_tx = payload.signed_tx
     chain_id = payload.chain_id
 
@@ -518,41 +521,49 @@ async def broadcast_tx(payload: TxBroadcast):
             "explorer_url": explorer_url,
             "message": "Transaction submitted to network",
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Broadcast failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Broadcast failed: {e}")
+
 
 @app.get("/v1/tx/{tx_hash}")
 async def get_tx_status(tx_hash: str, chain_id: int = Query(..., alias="chainId")):
-    """Get transaction status and explorer URL."""
+    """Get transaction status via eth_getTransactionReceipt."""
     try:
         adapter = get_adapter_for_chain(chain_id)
         explorer_url = adapter.get_explorer_url(tx_hash)
+        receipt = await adapter.get_transaction_receipt(tx_hash)
+
+        if receipt is None:
+            return {
+                "hash": tx_hash,
+                "status": "pending",
+                "explorer_url": explorer_url,
+            }
+
+        status_int = receipt.get("status", 0)
+        status = "confirmed" if status_int == 1 else "failed"
         return {
             "hash": tx_hash,
-            "status": "confirmed",
+            "status": status,
+            "block_number": receipt.get("blockNumber"),
             "explorer_url": explorer_url,
         }
-    except Exception:
-        return {
-            "hash": tx_hash,
-            "status": "unknown",
-            "explorer_url": "",
-        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not fetch transaction: {e}")
 
 @app.post("/v1/ai/analyze")
 async def ai_analyze(payload: AiAnalyze):
     """Intelligent tab: analyze recipient risk via GenLayer AI."""
-    chainId = payload.chainId
-    to = payload.to
-    amount = payload.amount
-    token = payload.token
-
-    if not GENLAYER_RISK_CONTRACT and not GENLAYER_MOCK:
-        raise HTTPException(status_code=400, detail="GENLAYER_RISK_CONTRACT not configured")
-
-    analysis = await run_intelligent_analysis(chainId=chainId, to=to, amount=amount, token=token)
-
-    return analysis
+    return await run_intelligent_analysis(
+        chainId=payload.chainId,
+        to=payload.to,
+        amount=payload.amount,
+        token=payload.token,
+    )
 
 @app.post("/v1/smart-transfer/simulate")
 async def smart_transfer_simulate(payload: SmartTransferSimulate):
@@ -598,7 +609,7 @@ async def smart_transfer_simulate(payload: SmartTransferSimulate):
 
 @app.post("/v1/smart-transfer/deploy")
 async def smart_transfer_deploy(payload: SmartTransferDeploy, db: Session = Depends(get_db)):
-    """Deploy a smart transfer instance to GenLayer."""
+    """Deploy a SmartTransfer instance to GenLayer from contract source."""
     deploy_id = payload.id or str(uuid.uuid4())
 
     if GENLAYER_MOCK:
@@ -606,52 +617,49 @@ async def smart_transfer_deploy(payload: SmartTransferDeploy, db: Session = Depe
             "id": deploy_id,
             "status": "deployed",
             "message": "Smart transfer deployed to GenLayer (mock mode)",
-            "contract_address": f"0x{deploy_id}000000000000000000000000000000000000",
+            "contract_address": None,
             "config": payload.dict(),
             "mode": "mock",
         }
 
-    if not GENLAYER_ACCOUNT_PK or not GENLAYER_SMART_TRANSFER_CONTRACT:
-        raise HTTPException(status_code=400, detail="GENLAYER_ACCOUNT_PK and GENLAYER_SMART_TRANSFER_CONTRACT required")
+    if not GENLAYER_ACCOUNT_PK:
+        raise HTTPException(status_code=400, detail="GENLAYER_ACCOUNT_PK not set")
+
+    code_path = os.path.join(os.path.dirname(__file__), "..", "..", "contracts", "genlayer", "smart_transfer.py")
+    code_path = os.path.abspath(code_path)
+    try:
+        with open(code_path, "r", encoding="utf-8") as f:
+            code = f.read()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read contract source: {e}")
+
+    args = [
+        payload.from_address,
+        payload.token,
+        payload.to_address,
+        payload.amount,
+        payload.min_balance,
+        payload.max_amount,
+        json.dumps(payload.allowlist),
+        payload.oracle_condition,
+        payload.interval,
+        payload.execute_at_utc,
+        str(payload.source_chain_id),
+    ]
 
     try:
-        from genlayer import create_client
-        client = create_client(
-            rpc_url=GENLAYER_RPC,
-            network=GENLAYER_NETWORK,
-            account_pk=GENLAYER_ACCOUNT_PK,
-        )
-
-        # Deploy the SmartTransfer contract with init parameters
-        contract_address = await client.deploy_contract(
-            abi_path="contracts/genlayer/smart_transfer.json",
-            bytecode_path="contracts/genlayer/smart_transfer.bin",
-            args=[
-                payload.from_address,
-                payload.token,
-                payload.to_address,
-                payload.amount,
-                payload.min_balance,
-                payload.max_amount,
-                payload.allowlist,
-                payload.oracle_condition,
-                payload.interval,
-                payload.execute_at_utc,
-                str(payload.source_chain_id),
-            ],
-        )
-
-        # Wait for finalization
-        await client.wait_for_finalization(contract_address)
-
+        contract_address = await asyncio.to_thread(_gl_deploy, code, args)
         return {
             "id": deploy_id,
             "status": "deployed",
             "contract_address": contract_address,
             "config": payload.dict(),
+            "mode": "live",
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Deploy failed: {e}")
+        raise HTTPException(status_code=503, detail=f"GenLayer deploy failed: {e}")
 
 @app.get("/v1/smart-transfer/{st_id}")
 async def smart_transfer_status(st_id: str):

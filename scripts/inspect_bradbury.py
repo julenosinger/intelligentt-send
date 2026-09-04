@@ -1,42 +1,37 @@
-"""Utility script to inspect GenLayer Bradbury network state."""
-import asyncio
+"""Utility script to inspect the GenLayer Bradbury network state."""
 import os
 
-async def inspect_bradbury():
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def inspect_bradbury():
     """Inspect the Bradbury GenLayer network."""
-    from genlayer import create_client
+    from genlayer_py import create_client
+    from genlayer_py.chains import testnet_bradbury
 
-    rpc = os.getenv("GENLAYER_RPC", "https://rpc-bradbury.genlayer.com")
-    network = os.getenv("GENLAYER_NETWORK", "bradbury")
     pk = os.getenv("GENLAYER_ACCOUNT_PK", "")
+    account = None
+    if pk:
+        from genlayer_py import create_account
+        account = create_account(pk)
 
-    if not pk:
-        print("Set GENLAYER_ACCOUNT_PK to use this script")
-        return
+    client = create_client(chain=testnet_bradbury, account=account)
 
-    client = create_client(rpc_url=rpc, network=network, account_pk=pk)
-
-    # Check account balance
     try:
-        balance = await client.read_contract(
-            address="0x0000000000000000000000000000000000000000",
-            function_name="getBalance",
-            args=[],
-        )
-        print(f"Account balance: {balance}")
+        block = client.get_block_number()
+        print(f"Block number: {block}")
     except Exception as e:
-        print(f"Could not read balance: {e}")
+        print(f"Could not get block number: {e}")
 
-    # Check network info
-    try:
-        block = await client.read_contract(
-            address="0x0000000000000000000000000000000000000000",
-            function_name="getCurrentBlock",
-            args=[],
-        )
-        print(f"Current block: {block}")
-    except Exception as e:
-        print(f"Could not get block: {e}")
+    if account:
+        try:
+            balance = client.get_balance(account.address)
+            print(f"Account {account.address} balance: {balance}")
+        except Exception as e:
+            print(f"Could not read balance: {e}")
+
 
 if __name__ == "__main__":
-    asyncio.run(inspect_bradbury())
+    inspect_bradbury()

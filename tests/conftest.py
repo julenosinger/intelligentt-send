@@ -1,13 +1,13 @@
-"""Integration marker for GenLayer live tests.
+"""Pytest configuration and markers.
 
 Usage:
-    pytest tests/ -m "not integration"  # skip live tests
-    pytest tests/ -m integration        # run live GenLayer tests (needs GENLAYER_ACCOUNT_PK)
+    pytest tests/ -m "not integration"   # skip live network tests (default for CI)
+    pytest tests/ -m integration         # run live GenLayer/network tests
 """
 import pytest
 
 
-@pytest.mark.integration
-def test_genlayer_live_marker():
-    """Mark test as requiring GenLayer connection."""
-    pass
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "integration: test requires a live network connection (GenLayer/Arc RPC)"
+    )

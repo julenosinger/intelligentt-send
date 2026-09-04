@@ -291,7 +291,7 @@ textarea{resize:none;font-size:13px;font-family:var(--mono);line-height:1.5}
           <label class="label">Token</label>
           <div class="select-wrap">
             <select id="b-token" onchange="document.getElementById('b-pill').textContent=this.value">
-              <option>USDC</option><option>EURC</option><option>ARC</option>
+              <option>USDC</option><option>EURC</option>
             </select>
           </div>
         </div>
@@ -317,17 +317,17 @@ textarea{resize:none;font-size:13px;font-family:var(--mono);line-height:1.5}
         <div class="gas-row" id="b-gas">
           <div class="gas-chip active" onclick="selectGas(this,'b-gas')">
             <div class="gas-chip-label">Economy</div>
-            <div class="gas-chip-val">0.0008 ARC</div>
+            <div class="gas-chip-val">0.0008 USDC</div>
             <div class="gas-chip-usd">~$0.04</div>
           </div>
           <div class="gas-chip" onclick="selectGas(this,'b-gas')">
             <div class="gas-chip-label">Standard</div>
-            <div class="gas-chip-val">0.0015 ARC</div>
+            <div class="gas-chip-val">0.0015 USDC</div>
             <div class="gas-chip-usd">~$0.07</div>
           </div>
           <div class="gas-chip" onclick="selectGas(this,'b-gas')">
             <div class="gas-chip-label">Fast</div>
-            <div class="gas-chip-val">0.0028 ARC</div>
+            <div class="gas-chip-val">0.0028 USDC</div>
             <div class="gas-chip-usd">~$0.13</div>
           </div>
         </div>
@@ -550,7 +550,7 @@ function switchTab(name){
 }
 
 /* ── wallet ── */
-const MOCK_ADDR = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
+const MOCK_ADDR = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f23450';
 
 let walletConnected = false;
 let currentAddress = '';
@@ -570,7 +570,7 @@ async function fetchWalletBalances(address, chainId) {
 
 function connectWallet(){
   const addrInput = document.getElementById('b-addr');
-  const preferredAddr = addrInput.value.trim() || '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
+  const preferredAddr = addrInput.value.trim() || '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f23450';
   document.getElementById('connect-btn').textContent = 'Connecting…';
   setTimeout(async () => {
     if (window.ethereum) {
@@ -676,9 +676,9 @@ async function validateAddr(inputId, fieldId, ensId){
 
 /* ── gas selector ── */
 const GAS_DATA = [
-  {label:'Economy',val:'0.0008 ARC',usd:'$0.04',time:'~120s'},
-  {label:'Standard',val:'0.0015 ARC',usd:'$0.07',time:'~30s'},
-  {label:'Fast',val:'0.0028 ARC',usd:'$0.13',time:'~10s'},
+  {label:'Economy',val:'0.0008 USDC',usd:'$0.04',time:'~120s'},
+  {label:'Standard',val:'0.0015 USDC',usd:'$0.07',time:'~30s'},
+  {label:'Fast',val:'0.0028 USDC',usd:'$0.13',time:'~10s'},
 ];
 function selectGas(el, groupId){
   document.querySelectorAll('#'+groupId+' .gas-chip').forEach(c => c.classList.remove('active'));
@@ -721,10 +721,8 @@ async function doSend(mode){
   const amt  = document.getElementById(amtMap[mode])?.value || '0';
   const tok  = mode === 'advanced' ? 'USDC' : document.getElementById('b-token')?.textContent || 'USDC';
 
-  let hash = '';
-  try {
-    if (mode === 'advanced') {
-      // Deploy smart transfer via API
+  if (mode === 'advanced') {
+    try {
       const deployResp = await fetch(`${window.API_BASE}/v1/smart-transfer/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -742,51 +740,73 @@ async function doSend(mode){
         })
       });
       const dep = await deployResp.json();
-      hash = dep.contract_address || '0x' + Math.random().toString(16).slice(2,18);
-      toast('Smart transfer deployed ✓');
-    } else {
-      // Prepare the transaction via API
-      const prepareResp = await fetch(`${window.API_BASE}/v1/tx/prepare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: mode === 'intelligent' ? 'intelligent' : 'basic',
-          from_address: currentAddress,
-          to_address: addr,
-          amount: amt,
-          token: tok,
-          chain_id: 5042002,
-        })
+      txHistory.unshift({
+        type:'out', addr: addr.length > 22 ? addr.slice(0,10)+'…'+addr.slice(-6) : addr,
+        amount: parseFloat(amt).toFixed(2)+' '+tok,
+        time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+        status: dep.contract_address ? 'pending' : 'pending',
+        hash: dep.contract_address || ''
       });
-      const prep = await prepareResp.json();
-
-      // Sign and broadcast
-      hash = '0x' + Math.random().toString(16).slice(2,18);
-      try {
-        const broadcastResp = await fetch(`${window.API_BASE}/v1/tx/broadcast`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ signed_tx: '0xsigned_' + hash, chain_id: 5042002 })
-        });
-        const bcast = await broadcastResp.json();
-        hash = bcast.tx_hash || hash;
-      } catch(e) {
-        // fallback
-      }
-      toast(mode === 'intelligent' ? 'Analysis complete ✓' : 'Transaction submitted ✓');
+      toast(dep.contract_address ? 'Smart transfer deployed ✓' : 'Smart transfer deployed (mock) ✓');
+    } catch(e) {
+      toast('Deploy failed, check backend');
     }
-  } catch(e) {
-    hash = '0x' + Math.random().toString(16).slice(2,18);
-    toast('Transaction submitted (local fallback)');
+    renderHistory();
+    return;
   }
 
-  txHistory.unshift({
-    type:'out', addr: addr.length > 22 ? addr.slice(0,10)+'…'+addr.slice(-6) : addr,
-    amount: parseFloat(amt).toFixed(2)+' '+tok,
-    time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
-    status: mode === 'advanced' ? 'pending' : 'confirmed',
-    hash: hash
-  });
+  // Basic / Intelligent: prepare, then sign and broadcast via the wallet
+  try {
+    const prepareResp = await fetch(`${window.API_BASE}/v1/tx/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: mode === 'intelligent' ? 'intelligent' : 'basic',
+        from_address: currentAddress,
+        to_address: addr,
+        amount: amt,
+        token: tok,
+        chain_id: 5042002,
+      })
+    });
+    const prep = await prepareResp.json();
+    if (!prep.data && prep.mode === 'intelligent') {
+      toast('Analysis done — review the risk before sending');
+      return;
+    }
+
+    if (!window.ethereum) {
+      toast('Connect a wallet to sign and send');
+      return;
+    }
+
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const from = accounts[0];
+    const valueHex = (prep.value && prep.value !== '0')
+      ? '0x' + BigInt(Math.round(parseFloat(prep.value) * 1e18)).toString(16)
+      : '0x0';
+    const txParams = {
+      from: from,
+      to: prep.to,
+      data: prep.data || '0x',
+      value: valueHex,
+      chainId: '0x' + (5042002).toString(16),
+    };
+
+    const txHash = await window.ethereum.request({ method: 'eth_sendTransaction', params: [txParams] });
+
+    txHistory.unshift({
+      type:'out', addr: addr.length > 22 ? addr.slice(0,10)+'…'+addr.slice(-6) : addr,
+      amount: parseFloat(amt).toFixed(2)+' '+tok,
+      time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),
+      status: 'pending',
+      hash: txHash
+    });
+    toast('Transaction submitted ✓');
+  } catch(e) {
+    console.error('send failed', e);
+    toast('Transaction failed, check wallet');
+  }
   if (mode === 'basic') backBasic();
   renderHistory();
 }
@@ -817,7 +837,7 @@ function renderHistory(){
           <div class="hist-right">
             <div class="hist-amt ${tx.type}">${tx.amount || ''}</div>
             <span class="hist-status ${tx.status}">${tx.status}</span>
-            ${tx.hash ? `<a class="hist-link" onclick="toast('Explorer: ${window.API_BASE}/tx/${tx.hash}')">↗ Explorer</a>` : ''}
+            ${tx.explorer_url ? `<a class="hist-link" href="${tx.explorer_url}" target="_blank" rel="noopener">↗ Explorer</a>` : ''}
           </div>
         </div>`).join('');
     })
@@ -1023,7 +1043,7 @@ function openQR(inputId){
   renderMockQR();
   // simulate scanning after 2s
   setTimeout(() => {
-    const mockAddr = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f2345';
+    const mockAddr = '0x742d35Cc6634C0532925a3b8D4C9B3a7e1f23450';
     document.getElementById('qr-addr-text').textContent = mockAddr;
   }, 1500);
 }

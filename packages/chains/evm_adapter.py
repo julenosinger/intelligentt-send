@@ -6,13 +6,20 @@ from packages.chains.arc_adapter import ChainAdapter
 
 
 class EVMChainAdapter(ChainAdapter):
-    """Generic EVM adapter for any chain with RPC support."""
+    """Generic EVM adapter for any EVM-compatible chain with RPC support."""
 
-    def __init__(self, rpc_url: str = "https://rpc.sepolia.org"):
+    def __init__(
+        self,
+        rpc_url: str,
+        chain_id: int,
+        explorer: str,
+        native_token: str = "ETH",
+    ):
         self.rpc_url = rpc_url
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
-        self.chain_id = 0
-        self.native_token = "ETH"
+        self.chain_id = chain_id
+        self.explorer = explorer
+        self.native_token = native_token
 
     def get_chain_id(self) -> int:
         return self.chain_id
@@ -21,7 +28,7 @@ class EVMChainAdapter(ChainAdapter):
         return self.rpc_url
 
     def get_explorer_url(self, tx_hash: str) -> str:
-        return f"{self.rpc_url}/tx/{tx_hash}"
+        return f"{self.explorer.rstrip('/')}/tx/{tx_hash}"
 
     def get_token_address(self, symbol: str) -> Optional[str]:
         return None
@@ -31,7 +38,7 @@ class EVMChainAdapter(ChainAdapter):
             raise ConnectionError("Not connected to RPC")
         addr = self.w3.to_checksum_address(address)
         balance = self.w3.eth.get_balance(addr)
-        return {self.native_token: str(balance)}
+        return {self.native_token: str(self.w3.from_wei(balance, "ether"))}
 
     async def estimate_gas(
         self,
@@ -77,4 +84,15 @@ class EVMChainAdapter(ChainAdapter):
         }
 
     async def send_raw_tx(self, signed_tx: str) -> str:
-        return self.w3.to_hex(self.w3.keccak(text=signed_tx))
+        """Broadcast a raw signed transaction via eth_sendRawTransaction."""
+        h = self.w3.eth.send_raw_transaction(signed_tx)
+        return self.w3.to_hex(h)
+
+    async def get_transaction_receipt(self, tx_hash: str) -> Optional[Dict[str, Any]]:
+        try:
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            return None
+        if receipt is None:
+            return None
+        return dict(receipt)
